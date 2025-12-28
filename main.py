@@ -284,7 +284,6 @@ class KeywordManager:
         self.config = config
         
         # 使用 AstrBot 的标准插件数据目录
-        # 这是相对于 AstrBot 根目录的 data/plugin_data/{插件名}/
         self.data_dir = StarTools.get_data_dir()
         logger.info(f"Van词库数据目录: {self.data_dir}")
         
@@ -300,6 +299,87 @@ class KeywordManager:
         self.math_evaluator = SafeMathEvaluator()
         self.cooling_manager = CoolingManager(self.data_dir)
         
+        # 内置词库内容
+        self.builtin_keywords = [
+            {
+                "keyword": "喵撒娇",
+                "responses": [
+                    "「尾巴绕你手腕~不许躲！@[qq]+(10-50)好感」",
+                    "「蹭蹭你~要抱抱！(10-50)好感度增加！」",
+                    "「喵~最喜欢你了！@[qq] 获得了(20-60)好感」",
+                    "「用脑袋顶你手心~不许停！@[qq]+(15-45)好感度UP」"
+                ],
+                "mode": 0,  # 模糊匹配
+                "description": "喵系撒娇互动"
+            },
+            {
+                "keyword": "早安",
+                "responses": [
+                    "「早安~今天也要加油哦！(1-100)点能量注入！」",
+                    "「早上好！为你准备了(1-3)杯咖啡~」",
+                    "「新的一天开始啦！获得(5-20)点活力值」",
+                    "「晨光中向你问好~今天幸运值是(1-100)」"
+                ],
+                "mode": 1,  # 精确匹配
+                "description": "早安问候"
+            },
+            {
+                "keyword": "晚安",
+                "responses": [
+                    "「晚安~祝你好梦！回复(1-50)点体力」",
+                    "「月色真美，做个好梦吧~获得(5-30)点睡眠质量」",
+                    "「闭上眼睛数羊吧~已经帮你数了(10-100)只」",
+                    "「晚安[name]，明天见！(1-80)点温馨度get」"
+                ],
+                "mode": 1,  # 精确匹配
+                "description": "晚安问候"
+            },
+            {
+                "keyword": "今天天气如何",
+                "responses": [
+                    "「让我看看~今天适合增加(10-60)点外出心情」",
+                    "「天气不错呢！建议进行(1-5)小时户外活动」",
+                    "「多云转晴~幸运加成(1-30)%」",
+                    "「今日宜：[n.1] 忌：[n.2]」"
+                ],
+                "mode": 0,  # 模糊匹配
+                "description": "天气查询"
+            },
+            {
+                "keyword": "摸头",
+                "responses": [
+                    "「唔...摸头杀！@[qq]获得(15-45)点亲密度」",
+                    "「被摸头了~开心！(20-60)点愉悦值上升」",
+                    "「摸摸~像这样？@[qq] 被返还了(10-40)点摸头能量」",
+                    "「头被摸得暖洋洋的~回赠你(5-25)点温暖值」"
+                ],
+                "mode": 0,  # 模糊匹配
+                "description": "摸头互动"
+            },
+            {
+                "keyword": "抽卡",
+                "responses": [
+                    "「卡池转动中...获得了(1-5)星角色！」",
+                    "「单抽出奇迹！(1-100)幸运值判定中...」",
+                    "「十连保底启动！@[qq]获得了(1-10)张SSR」",
+                    "「今日运势：(1-100)，适合抽卡概率：(+运势*0.8)%」"
+                ],
+                "mode": 0,  # 模糊匹配
+                "description": "抽卡模拟"
+            },
+            {
+                "keyword": "[n.1]多少好感",
+                "responses": [
+                    "「查询中...@[n.1]当前好感度：(10-1000)」",
+                    "「[n.1]对你的好感是：(50-500)，要继续加油哦！」",
+                    "「秘密数据读取：[n.1]→[qq]：好感值(1-999)」",
+                    "「好感雷达显示：[n.1]对你的好感为(100-300)点」"
+                ],
+                "mode": 0,  # 模糊匹配
+                "description": "好感度查询（通配符）"
+            }
+        ]
+        
     async def initialize(self):
         """异步初始化"""
         logger.info("Van词库插件正在初始化...")
@@ -309,6 +389,9 @@ class KeywordManager:
         
         # 异步加载配置
         await self.load_configs()
+        
+        # 创建内置词库
+        await self._create_builtin_lexicon()
         
         logger.info("Van词库插件初始化完成")
         
@@ -361,6 +444,55 @@ class KeywordManager:
             except Exception as e:
                 logger.error(f"加载选择配置失败: {e}")
     
+    async def _create_builtin_lexicon(self):
+        """创建内置词库"""
+        builtin_lexicon_id = "builtin_default"
+        builtin_path = self.data_dir / "lexicon" / f"{builtin_lexicon_id}.json"
+        
+        # 如果内置词库已存在，检查是否需要更新
+        if await aos.path.exists(builtin_path):
+            try:
+                async with aiofiles.open(builtin_path, 'r', encoding='utf-8') as f:
+                    existing_data = json.loads(await f.read())
+                
+                # 检查版本标识
+                if existing_data.get("_metadata", {}).get("version") == "1.0":
+                    logger.info("内置词库已存在且为最新版本")
+                    return
+            except Exception as e:
+                logger.warning(f"读取现有内置词库失败，将重新创建: {e}")
+        
+        # 构建内置词库数据结构
+        builtin_lexicon = {
+            "_metadata": {
+                "name": "内置默认词库",
+                "version": "1.0",
+                "created_at": datetime.now().isoformat(),
+                "description": "Van词库系统内置词库",
+                "keyword_count": len(self.builtin_keywords)
+            },
+            "work": []
+        }
+        
+        # 添加内置关键词
+        for item in self.builtin_keywords:
+            keyword_item = {
+                item["keyword"]: {
+                    "r": item["responses"],
+                    "s": item["mode"]
+                }
+            }
+            builtin_lexicon["work"].append(keyword_item)
+        
+        # 保存内置词库
+        try:
+            async with aiofiles.open(builtin_path, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(builtin_lexicon, indent=4, ensure_ascii=False))
+            logger.info(f"内置词库创建成功: {builtin_lexicon_id}")
+            
+        except Exception as e:
+            logger.error(f"创建内置词库失败: {e}")
+    
     def get_lexicon_id(self, group_id: str, user_id: str = "") -> str:
         """
         获取词库ID
@@ -390,9 +522,8 @@ class KeywordManager:
         logger.debug(f"使用默认词库: group={group_id}, user={user_id}, lexicon={lexicon_id}")
         return lexicon_id
     
-    async def get_lexicon(self, group_id: str, user_id: str = "") -> Dict:
+    async def get_lexicon(self, lexicon_id: str, user_id: str = "") -> Dict:
         """获取词库数据"""
-        lexicon_id = self.get_lexicon_id(group_id, user_id)
         lexicon_path = self.data_dir / "lexicon" / f"{lexicon_id}.json"
 
         # 内存缓存
@@ -442,11 +573,10 @@ class KeywordManager:
 
     async def search_keyword(self, text: str, group_id: str, user_id: str, is_admin: bool = False) -> Optional[Dict]:
         """搜索匹配的关键词"""
-        lexicon = await self.get_lexicon(group_id, user_id)
         current_lexicon_id = self.get_lexicon_id(group_id, user_id)
-
-        # 搜索顺序：当前词库 -> 默认词库（如果是私聊则跳过）
-        lexicon_ids = [current_lexicon_id]
+        
+        # 搜索顺序：内置词库 -> 当前词库 -> 默认词库
+        lexicon_ids = ["builtin_default", current_lexicon_id]
         
         # 如果是群聊，并且当前不是使用的群组默认词库，则也搜索群组默认词库
         if group_id and current_lexicon_id != group_id:
@@ -460,51 +590,55 @@ class KeywordManager:
         logger.debug(f"搜索词库列表: {lexicon_ids}")
 
         for lid in lexicon_ids:
-            lex_data = await self.get_lexicon(lid, "")
-            logger.debug(f"检查词库 {lid}: 词条数={len(lex_data.get('work', []))}")
-            
-            for idx, item in enumerate(lex_data.get("work", [])):
-                for key, value in item.items():
-                    # 检查管理员模式
-                    if value.get("s") == 10 and not is_admin:
-                        logger.debug(f"跳过管理员模式词条: {key}")
-                        continue
-                    
-                    # 检查通配符匹配
-                    if "[n." in key:
-                        match_result = self.match_wildcard(key, text)
-                        if match_result:
-                            logger.info(f"通配符匹配成功: 词库={lid}, key='{key}', text='{text}'")
+            try:
+                lex_data = await self.get_lexicon(lid, "")
+                logger.debug(f"检查词库 {lid}: 词条数={len(lex_data.get('work', []))}")
+                
+                for idx, item in enumerate(lex_data.get("work", [])):
+                    for key, value in item.items():
+                        # 检查管理员模式
+                        if value.get("s") == 10 and not is_admin:
+                            logger.debug(f"跳过管理员模式词条: {key}")
+                            continue
+                        
+                        # 检查通配符匹配
+                        if "[n." in key:
+                            match_result = self.match_wildcard(key, text)
+                            if match_result:
+                                logger.info(f"通配符匹配成功: 词库={lid}, key='{key}', text='{text}'")
+                                return {
+                                    "type": "wildcard",
+                                    "response": random.choice(value["r"]),
+                                    "matches": match_result,
+                                    "lexicon_id": lid,
+                                    "item_index": idx,
+                                    "keyword": key
+                                }
+                        
+                        # 精确匹配
+                        if value.get("s") == 1 and key == text:
+                            logger.info(f"精确匹配成功: 词库={lid}, key='{key}', text='{text}'")
                             return {
-                                "type": "wildcard",
+                                "type": "exact",
                                 "response": random.choice(value["r"]),
-                                "matches": match_result,
                                 "lexicon_id": lid,
                                 "item_index": idx,
                                 "keyword": key
                             }
-                    
-                    # 精确匹配
-                    if value.get("s") == 1 and key == text:
-                        logger.info(f"精确匹配成功: 词库={lid}, key='{key}', text='{text}'")
-                        return {
-                            "type": "exact",
-                            "response": random.choice(value["r"]),
-                            "lexicon_id": lid,
-                            "item_index": idx,
-                            "keyword": key
-                        }
-                    
-                    # 模糊匹配
-                    if value.get("s") == 0 and key in text:
-                        logger.info(f"模糊匹配成功: 词库={lid}, key='{key}', text='{text}'")
-                        return {
-                            "type": "fuzzy",
-                            "response": random.choice(value["r"]),
-                            "lexicon_id": lid,
-                            "item_index": idx,
-                            "keyword": key
-                        }
+                        
+                        # 模糊匹配
+                        if value.get("s") == 0 and key in text:
+                            logger.info(f"模糊匹配成功: 词库={lid}, key='{key}', text='{text}'")
+                            return {
+                                "type": "fuzzy",
+                                "response": random.choice(value["r"]),
+                                "lexicon_id": lid,
+                                "item_index": idx,
+                                "keyword": key
+                            }
+            except Exception as e:
+                logger.warning(f"搜索词库 {lid} 时出错: {e}")
+                continue
         
         logger.debug(f"未找到匹配的关键词: '{text}'")
         return None
@@ -1173,20 +1307,38 @@ class KeywordPlugin(Star):
 
         return False
 
-    @filter.command("keyword", alias={"关键词", "词库"})
-    async def keyword_command(self, event: AstrMessageEvent):
-        yield event.plain_result(
-            "Van词库系统 v1.0\n\n"
-            "可用指令：\n"
-            "1. /keyword help - 查看帮助\n"
-            "2. /keyword list - 列出关键词\n"
-            "3. /keyword add - 添加关键词\n"
-            "4. /keyword delete - 删除关键词\n"
-            "5. /keyword search - 搜索关键词\n"
-            "6. /keyword backup - 备份当前词库"
-        )
+    # 以下是命令组定义
 
-    @filter.command("keyword help")
+
+# 修改你的命令组定义如下：
+
+@filter.command_group("keyword", alias={"关键词", "词库"})
+def keyword_group(self):
+    pass
+
+# 使用 __group_main__ 作为特殊名称
+@keyword_group.command("helps")
+async def keyword_main(self, event: AstrMessageEvent):
+    """处理 /keyword 命令（显示帮助）"""
+    yield event.plain_result(
+        "Van词库系统 v1.0\n\n"
+        "可用指令：\n"
+        "1. /keyword help - 查看帮助\n"
+        "2. /keyword list - 列出关键词\n"
+        "3. /keyword add <关键词> <回复> - 添加关键词\n"
+        "4. /keyword delete <关键词> - 删除关键词\n"
+        "5. /keyword search <关键词> - 搜索关键词\n"
+        "6. /keyword backup - 备份当前词库\n"
+        "7. /keyword builtin - 内置词库管理\n\n"
+        "🔧 管理员也可使用快捷指令：\n"
+        "• 精准问答 关键词 回复\n"
+        "• 模糊问答 关键词 回复\n"
+        "• 加选项 关键词 回复\n"
+        "• 删词 关键词\n"
+        "• 查词 关键词"
+    )
+
+    @keyword_group.command("help")
     async def keyword_help(self, event: AstrMessageEvent):
         help_text = """📚 Van词库系统使用说明
 
@@ -1228,7 +1380,7 @@ class KeywordPlugin(Star):
 
         yield event.plain_result(help_text)
 
-    @filter.command("keyword list")
+    @keyword_group.command("list")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def keyword_list(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
@@ -1244,10 +1396,6 @@ class KeywordPlugin(Star):
             result = "当前词库为空"
 
         yield event.plain_result(result)
-
-    @filter.command_group("keyword")
-    def keyword_group(self):
-        pass
 
     @keyword_group.command("add")
     @filter.permission_type(filter.PermissionType.ADMIN)
@@ -1319,6 +1467,78 @@ class KeywordPlugin(Star):
             result = f"未找到包含 '{keyword}' 的词条"
 
         yield event.plain_result(result)
+
+    @keyword_group.command("builtin")
+    async def keyword_builtin(self, event: AstrMessageEvent):
+        """内置词库管理"""
+        yield event.plain_result(
+            "📦 内置词库管理\n\n"
+            "可用命令：\n"
+            "1. /keyword builtin list - 查看所有内置关键词\n"
+            "2. /keyword builtin import [词库ID] - 导入内置词库到指定词库（不指定则导入到当前词库）\n"
+        )
+
+    @keyword_group.command("builtin list")
+    async def keyword_builtin_list(self, event: AstrMessageEvent):
+        """列出内置关键词"""
+        builtin_items = []
+        for i, item in enumerate(self.keyword_manager.builtin_keywords, 1):
+            builtin_items.append(
+                f"{i}. 【{item['keyword']}】\n"
+                f"   模式: {'模糊' if item['mode'] == 0 else '精确'}\n"
+                f"   描述: {item['description']}\n"
+                f"   回复数: {len(item['responses'])}\n"
+            )
+        
+        result = "🌟 内置关键词列表 🌟\n\n" + "\n".join(builtin_items)
+        yield event.plain_result(result)
+
+    @keyword_group.command("builtin import")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def keyword_builtin_import(self, event: AstrMessageEvent, target_lexicon: str = ""):
+        """导入内置词库到指定词库"""
+        group_id = str(event.get_group_id() or "")
+        user_id = str(event.get_sender_id())
+        
+        # 如果没有指定词库ID，使用当前词库
+        if not target_lexicon:
+            lexicon_id = self.keyword_manager.get_lexicon_id(group_id, user_id)
+        else:
+            lexicon_id = target_lexicon
+        
+        # 加载目标词库
+        target_data = await self.keyword_manager.get_lexicon(lexicon_id, "")
+        imported_count = 0
+        
+        # 导入内置关键词
+        for item in self.keyword_manager.builtin_keywords:
+            keyword = item["keyword"]
+            
+            # 检查是否已存在
+            exists = False
+            for existing_item in target_data["work"]:
+                if keyword in existing_item:
+                    exists = True
+                    break
+            
+            if not exists:
+                new_item = {
+                    keyword: {
+                        "r": item["responses"],
+                        "s": item["mode"]
+                    }
+                }
+                target_data["work"].append(new_item)
+                imported_count += 1
+        
+        # 保存词库
+        await self.keyword_manager.save_lexicon(lexicon_id, target_data)
+        
+        yield event.plain_result(
+            f"✅ 导入完成！\n"
+            f"目标词库: {lexicon_id}\n"
+            f"导入数量: {imported_count}/{len(self.keyword_manager.builtin_keywords)}"
+        )
 
     async def terminate(self):
         logger.info("Van词库插件正在卸载...")
